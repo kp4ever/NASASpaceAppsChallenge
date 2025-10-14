@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteor Matrix - Asteroid Impact Simulation</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/metropolis-2" rel="stylesheet">
+    <!-- Complementary display font for a sci-fi/tech accent -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Metropolis', sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+            position: relative;
+        }
+
+        :root {
+            /* Font stack: Metropolis for UI, Orbitron for display/headings, DM Mono for monospace values */
+            --font-ui: "Metropolis", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            --font-display: "Orbitron", "Metropolis", system-ui, sans-serif;
+            --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace;
+        }
+
+        /* Animated stars background */
+        .stars {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 1;
+        }
+
+        .star {
+            position: absolute;
+            background: #ffffff;
+            border-radius: 50%;
+            animation: twinkle 3s infinite;
+        }
+
+        .star:nth-child(odd) {
+            animation-delay: 1s;
+        }
+
+        .star:nth-child(even) {
+            animation-delay: 2s;
+        }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* Main container */
+        .container {
+            position: relative;
+            z-index: 2;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* Title styling */
+        .title {
+            font-family: var(--font-display);
+            font-size: 4.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #ff6b9d, #c77dff, #ff6b9d);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease-in-out infinite;
+            text-shadow: 0 0 30px rgba(255, 107, 157, 0.5);
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        /* Tagline styling */
+        .tagline {
+            font-family: var(--font-ui);
+            font-size: 1.3em;
+            margin-bottom: 60px;
+            color: #cccccc;
+            font-style: italic;
+            opacity: 0.9;
+            letter-spacing: 1px;
+        }
+
+        /* Meteor icon container */
+        .meteor-icon {
+            width: 150px;
+            height: 150px;
+            margin: 40px auto;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            animation: float 4s ease-in-out infinite;
+        }
+
+        .meteor-icon:hover {
+            transform: scale(1.1);
+            filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.8));
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        /* SVG meteor icon */
+        .meteor-svg {
+            width: 100%;
+            height: 100%;
+            fill: #8b5cf6;
+            transition: fill 0.3s ease;
+        }
+
+        .meteor-icon:hover .meteor-svg {
+            fill: #c084fc;
+        }
+
+        /* Enter button */
+        .enter-button {
+            font-family: var(--font-ui);
+            background: linear-gradient(45deg, #ff6b9d, #c77dff);
+            border: none;
+            color: white;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 20px;
+            box-shadow: 0 4px 15px rgba(255, 107, 157, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .enter-button:hover {
+            background: linear-gradient(45deg, #c77dff, #ff6b9d);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 157, 0.5);
+        }
+
+        /* Pulsing glow effect */
+        .glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+            animation: pulse 3s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.8; }
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .title {
+                font-size: 3em;
+            }
+            
+            .tagline {
+                font-size: 1.1em;
+                margin-bottom: 40px;
+            }
+            
+            .meteor-icon {
+                width: 120px;
+                height: 120px;
+            }
+            
+            .enter-button {
+                padding: 12px 30px;
+                font-size: 1em;
+            }
+        }
+
+        /* Footer */
+        .footer {
+            font-family: var(--font-ui);
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.9em;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <!-- Animated stars background -->
+    <div class="stars" id="stars"></div>
+
+    <div class="container">
+        <h1 class="title">Meteor Matrix</h1>
+        <p class="tagline">The simulation isn't real... but the threat is.</p>
+        
+        <div class="meteor-icon" onclick="enterSimulator()">
+            <div class="glow"></div>
+            <!-- Meteor SVG Icon -->
+            <svg class="meteor-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <!-- Meteor body -->
+                <circle cx="30" cy="30" r="15" opacity="0.9"/>
+                <!-- Meteor tail/trail -->
+                <path d="M 40 40 Q 60 60 80 85 Q 75 80 70 75 Q 55 55 40 40" opacity="0.7"/>
+                <path d="M 45 45 Q 65 65 85 90 Q 80 85 75 80 Q 60 60 45 45" opacity="0.5"/>
+                <path d="M 50 50 Q 70 70 90 95 Q 85 90 80 85 Q 65 65 50 50" opacity="0.3"/>
+                <!-- Impact craters on meteor -->
+                <circle cx="26" cy="26" r="2" fill="#6b46c1" opacity="0.8"/>
+                <circle cx="35" cy="32" r="1.5" fill="#6b46c1" opacity="0.6"/>
+                <circle cx="28" cy="35" r="1" fill="#6b46c1" opacity="0.4"/>
+            </svg>
+        </div>
+        
+        <a href="simulator.html" class="enter-button">Enter Simulation</a>
+    </div>
+
+    <div class="footer">
+        <p>NASA Space Apps Challenge 2025 | Asteroid Impact Simulation</p>
+    </div>
+
+    <script>
+        // Create animated stars
+        function createStars() {
+            const starsContainer = document.getElementById('stars');
+            const numberOfStars = 100;
+            
+            for (let i = 0; i < numberOfStars; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                
+                // Random position
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                
+                // Random size
+                const size = Math.random() * 3 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+                
+                // Random animation delay
+                star.style.animationDelay = Math.random() * 3 + 's';
+                
+                starsContainer.appendChild(star);
+            }
+        }
+
+        // Enter simulator function
+        function enterSimulator() {
+            window.location.href = 'simulator.html';
+        }
+
+        // Initialize stars when page loads
+        window.addEventListener('load', createStars);
+
+        // Add keyboard navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                enterSimulator();
+            }
+        });
+
+        // Add meteor icon click sound effect (optional)
+        function playClickSound() {
+            // You can add audio feedback here if desired
+            const meteorIcon = document.querySelector('.meteor-icon');
+            meteorIcon.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                meteorIcon.style.transform = '';
+            }, 100);
+        }
+
+        // Enhanced click interaction
+        document.querySelector('.meteor-icon').addEventListener('click', playClickSound);
+    </script>
+</body>
+</html>

@@ -1,0 +1,540 @@
+import { PerspectiveCamera, Scene, WebGLRenderer, CircleGeometry, MeshBasicMaterial, Mesh, Vector3 } from 'three';
+import GlobeGL from 'globe.gl';
+
+// IIFE to avoid global scope pollution
+(async function() {
+
+// Utility function for debouncing resize events
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Global variables for visualization
+let currentPage = 'simulator';
+let menuOpen = true;
+let globe;
+
+// NASA NEO API configuration
+const NASA_API_KEY = 'DEMO_KEY'; // Replace with your NASA API key if needed
+const NASA_NEO_API = 'https://api.nasa.gov/neo/rest/v1/';
+
+// Function to provide specific high-risk asteroid data
+async function fetchNearEarthObjects() {
+    // Return specific high-risk asteroid data
+    return [{
+        name: "2007 FT3",
+        absoluteMagnitude: 22.4,
+        diameter: {
+            min: 100,
+            max: 225
+        },
+        nextApproach: {
+            date: "2027-03-14",
+            distance: 135000, // km
+            au: 0.0009
+        },
+        hazardous: true,
+        impactRisk: {
+            probability: 0.00012, // 1.2 × 10⁻⁴
+            probabilityFraction: "1 in 8,300",
+            timeframe: "2025–2125",
+            palegroScale: -2.6,
+            torinoScale: 1
+        },
+        velocity: 25.3, // Example velocity in km/s
+        missDistance: 135000 // km
+    }];
+}
+
+// Initialize Globe.GL
+const width = window.innerWidth - 600;
+const height = window.innerHeight;
+
+// Create globe with default settings
+globe = Globe()
+    .width(width)
+    .height(height)
+    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+    .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+    .backgroundImageUrl(null)
+    .showAtmosphere(true)
+    .atmosphereColor('lightskyblue')
+    .atmosphereAltitude(0.1)
+
+// Add ResizeObserver for efficient window resizing with performance optimizations
+const resizeObserver = new ResizeObserver(debounce(() => {
+    const newWidth = window.innerWidth - 600;
+    const newHeight = window.innerHeight;
+    
+    // Batch DOM updates
+    requestAnimationFrame(() => {
+        svg.attr('width', newWidth)
+           .attr('height', newHeight);
+           
+        projection.translate([newWidth / 2, newHeight / 2])
+                 .scale(Math.min(newWidth, height) / 2.5);
+                 
+        // Update paths with reduced precision for better performance
+        if (land) {
+            path.precision(0.2); // Reduce path precision during resize
+            land.attr('d', path);
+        }
+        if (impactLayer) {
+            const paths = impactLayer.selectAll('path');
+            if (paths.size() > 100) {
+                // If too many paths, update in batches
+                const batchSize = 50;
+                for (let i = 0; i < paths.size(); i += batchSize) {
+                    setTimeout(() => {
+                        paths.slice(i, i + batchSize).attr('d', path);
+                    }, 0);
+                }
+            } else {
+                paths.attr('d', path);
+            }
+        }
+        path.precision(0.1); // Reset precision after resize
+    });
+}, 100));
+
+// Function to populate NEO list with detailed asteroid information
+async function updateNEOList() {
+    const neoList = document.getElementById('neo-list');
+    const asteroids = await fetchNearEarthObjects();
+    
+    if (asteroids.length === 0) {
+        neoList.innerHTML = '<p>No near-Earth objects found.</p>';
+        return;
+    }
+
+    const asteroid = asteroids[0]; // We only have one specific asteroid
+    
+    neoList.innerHTML = `
+        <div class="neo-item hazardous" onclick="loadNEO('${asteroid.name}', ${asteroid.diameter.max}, ${asteroid.velocity})">
+            <div class="name">${asteroid.name}</div>
+            <div class="stats">
+                <strong>Absolute Magnitude (H):</strong> ${asteroid.absoluteMagnitude}<br>
+                <strong>Estimated Diameter:</strong> ${asteroid.diameter.min}–${asteroid.diameter.max} m<br>
+                <strong>Next Close Approach:</strong> ${asteroid.nextApproach.date}<br>
+                <strong>Approach Distance:</strong> ${asteroid.nextApproach.au} au (${(asteroid.nextApproach.distance).toLocaleString()} km)<br>
+                <strong>Impact Probability:</strong> ${asteroid.impactRisk.probability.toExponential(1)} (${asteroid.impactRisk.probabilityFraction})<br>
+                <strong>Risk Period:</strong> ${asteroid.impactRisk.timeframe}<br>
+                <strong>Palermo Scale:</strong> ${asteroid.impactRisk.palegroScale}<br>
+                <strong>Torino Scale:</strong> ${asteroid.impactRisk.torinoScale}
+            </div>
+        </div>
+    `;
+    
+    // Pre-load the asteroid into the simulator
+    loadNEO(asteroid.name, asteroid.diameter.max, asteroid.velocity);
+}
+
+// Function to load NEO data into simulator
+function loadNEO(name, diameter, velocity) {
+    document.getElementById('diameter').value = diameter;
+    document.getElementById('diameter-value').textContent = diameter.toFixed(1) + ' m';
+    document.getElementById('speed').value = velocity;
+    document.getElementById('speed-value').textContent = parseFloat(velocity).toFixed(1) + ' km/s';
+    updateImpactVisualization();
+}
+
+// Initialize visualization
+async function initGlobe() {
+    try {
+        // Initialize Globe.GL
+        await updateNEOList(); // Fetch and display NEO data
+        
+        const mainView = document.querySelector('.main-view');
+        
+        // Initialize the globe instance
+        globe = GlobeGL()
+            .width(width)
+            .height(height)
+            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+            .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+            .backgroundImageUrl(null)
+            .showAtmosphere(true)
+            .atmosphereColor('lightskyblue')
+            .atmosphereAltitude(0.1)
+            // Configure controls
+            .enableZoom(true)
+            .zoomSpeed(1)
+            .minZoom(0.5)
+            .maxZoom(5)
+            .enablePointerInteraction(true)
+            // Add custom layers for impact visualization
+            .customLayerData([]);
+
+        // Mount the globe
+        mainView.appendChild(globe(mainView));
+        
+        // Set up event listeners after DOM is ready
+        setupEventListeners();
+    } catch (error) {
+        console.error('Error initializing globe:', error);
+    }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGlobe);
+} else {
+    initGlobe();
+
+        impactLayer = globe.append('g').attr('class', 'impact-layer');
+    });
+
+    // Handle click events for impact simulation
+    svg.on('click', function(event) {
+        if (event.defaultPrevented) return;
+        const [x, y] = d3.pointer(event);
+        const coords = projection.invert([x, y]);
+        if (coords && land) {
+            createImpact(coords);
+        }
+    });
+
+        // Initialize impact visualization
+    updateImpactVisualization();
+}
+
+// Set up event listeners
+function setupEventListeners() {
+    document.getElementById('diameter')?.addEventListener('input', () => {
+        updateDisplayValues();
+        updateImpactVisualization();
+    });
+    
+    document.getElementById('speed')?.addEventListener('input', () => {
+        updateDisplayValues();
+        updateImpactVisualization();
+    });
+    
+    document.getElementById('angle')?.addEventListener('input', () => {
+        updateDisplayValues();
+        updateImpactVisualization();
+    });
+    
+    // Mitigation strategy selection
+    document.getElementById('mitigation-strategy')?.addEventListener('change', (e) => {
+        document.querySelectorAll('.mitigation-params').forEach(el => el.style.display = 'none');
+        document.getElementById(`${e.target.value}-params`).style.display = 'block';
+    });
+    
+    // Mitigation parameter updates
+    ['impactor-mass', 'impactor-velocity', 'spacecraft-mass', 'hover-distance', 'duration', 'yield', 'standoff'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('input', () => {
+                document.getElementById(`${id}-value`).textContent = element.value;
+            });
+        }
+    });
+}
+});
+
+// Navigation functions
+function toggleMenu() {
+    const menu = document.querySelector('.menu-sidebar');
+    const toggle = document.querySelector('.menu-toggle');
+    menuOpen = !menuOpen;
+    
+    if (menuOpen) {
+        menu.classList.remove('closed');
+        toggle.classList.remove('closed');
+    } else {
+        menu.classList.add('closed');
+        toggle.classList.add('closed');
+    }
+}
+
+function showPage(page) {
+    currentPage = page;
+    const simulatorView = document.querySelector('.simulator-view');
+    const dictionaryPage = document.getElementById('dictionary-page');
+    const risksPage = document.getElementById('risks-page');
+    
+    simulatorView.classList.remove('hidden');
+    dictionaryPage.classList.remove('active');
+    risksPage.classList.remove('active');
+    
+    if (page === 'simulator') {
+        simulatorView.classList.remove('hidden');
+    } else {
+        simulatorView.classList.add('hidden');
+        if (page === 'dictionary') {
+            dictionaryPage.classList.add('active');
+        } else if (page === 'risks') {
+            risksPage.classList.add('active');
+        }
+    }
+}
+
+// Impact simulation functions
+
+// Function to calculate effectiveness of mitigation strategies
+function calculateMitigation(impactEnergy, method) {
+    // Define effectiveness coefficients for different methods (these are simplified examples)
+    const effectiveness = {
+        'kinetic': 0.8,   // High effectiveness for direct impact
+        'nuclear': 0.9,   // Very high effectiveness but controversial
+        'gravity': 0.5,   // Moderate effectiveness, needs long lead time
+        'laser': 0.7      // Good effectiveness but requires precise targeting
+    };
+
+    // Calculate potential energy reduction based on method
+    const energyReduction = impactEnergy * effectiveness[method];
+
+    // Calculate success probability (simplified model)
+    // Based on energy scale: higher energy = lower success probability
+    const baseProbability = Math.max(0, 1 - (Math.log10(impactEnergy) / 25));
+    const successProbability = baseProbability * effectiveness[method];
+
+    // Calculate required lead time in days (simplified)
+    let leadTime;
+    switch(method) {
+        case 'kinetic':
+            leadTime = 365; // ~1 year
+            break;
+        case 'nuclear':
+            leadTime = 180; // ~6 months
+            break;
+        case 'gravity':
+            leadTime = 3650; // ~10 years
+            break;
+        case 'laser':
+            leadTime = 730; // ~2 years
+            break;
+        default:
+            leadTime = 365;
+    }
+
+    return {
+        energyReduction: energyReduction,
+        successProbability: successProbability * 100, // Convert to percentage
+        requiredLeadTime: leadTime,
+        method: method
+    };
+}
+
+async function calculateImpact(radius, density, speed, angle, lat, lon) {
+    // Initial calculations
+    const mass = (4/3) * Math.PI * Math.pow(radius, 3) * density;
+    const initialVelocity = speed * 1000; // Convert to m/s
+    
+    // Get environmental data
+    let elevation = 0;
+    let isCoastal = false;
+    let recentSeismicActivity = [];
+
+    const hasValidCoords = typeof lat === 'number' && typeof lon === 'number' && isFinite(lat) && isFinite(lon);
+    if (hasValidCoords) {
+        try {
+            elevation = await getElevation(lat, lon);
+        } catch (err) {
+            console.warn('Elevation lookup failed, defaulting to 0:', err && err.message);
+            elevation = 0;
+        }
+
+        try {
+            isCoastal = await checkTsunamiRisk(lat, lon);
+        } catch (err) {
+            console.warn('Tsunami risk check failed, defaulting to false:', err && err.message);
+            isCoastal = false;
+        }
+
+        try {
+            recentSeismicActivity = await getSeismicActivity(lat, lon);
+        } catch (err) {
+            console.warn('Seismic activity lookup failed, defaulting to empty array:', err && err.message);
+            recentSeismicActivity = [];
+        }
+    } else {
+        // No valid coordinates provided (e.g., click outside globe), use safe defaults
+        elevation = 0;
+        isCoastal = false;
+        recentSeismicActivity = [];
+    }
+    
+    // Calculate atmospheric entry effects
+    const finalVelocity = initialVelocity * Math.pow(0.7, Math.cos(angle * Math.PI / 180));
+    const impactEnergy = 0.5 * mass * Math.pow(finalVelocity, 2);
+    
+    // Convert to TNT equivalent for easy comparison
+    const tntEquivalent = impactEnergy / 4.184e9;
+    
+    // Calculate crater size with environmental adjustments
+    const terrainMultiplier = elevation < 0 ? 0.8 : (elevation > 2000 ? 1.2 : 1.0);
+    const craterDiameter = Math.pow(impactEnergy / 1e15, 0.26) * 1000 * terrainMultiplier;
+    
+    // Calculate blast and shockwave effects
+    const blastRadius = Math.pow(impactEnergy / 4.184e12, 0.33) * 1000;
+    const shockwaveRadius = blastRadius * 2.5;
+    
+    // Calculate seismic magnitude (Richter scale)
+    const seismicMagnitude = 0.67 * (Math.log10(tntEquivalent) - 0.645);
+    
+    // Calculate tsunami wave height if coastal
+    const tsunamiHeight = isCoastal ? Math.pow(impactEnergy / 1e15, 0.25) * 10 : 0;
+    
+    return {
+        energy: impactEnergy,
+        craterDiameter,
+        blastRadius,
+        shockwaveRadius,
+        tntEquivalent,
+        seismicMagnitude,
+        tsunamiHeight,
+        elevation,
+        isCoastal,
+        recentSeismicActivity
+    };
+}
+
+async function createImpact(coords) {
+    // Validate coords (should be [lon, lat])
+    if (!coords || !Array.isArray(coords) || coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) {
+        console.warn('Invalid coordinates for impact:', coords);
+        return;
+    }
+
+    const diameter = parseFloat(document.getElementById('diameter').value) || 0;
+    const radius = diameter / 2;
+    const density = parseFloat(document.getElementById('material').value) || 3000;
+    const speed = parseFloat(document.getElementById('speed').value) || 20;
+    const angle = parseFloat(document.getElementById('angle').value) || 45;
+
+    // Extract lat/lon properly for environmental queries
+    const lon = coords[0];
+    const lat = coords[1];
+
+    // Await the async calculation which uses elevation and seismic helpers
+    const impact = await calculateImpact(radius, density, speed, angle, lat, lon);
+
+    // Defensive checks on returned impact data
+    if (!impact || typeof impact.craterDiameter !== 'number' || typeof impact.blastRadius !== 'number') {
+        console.error('Invalid impact data:', impact);
+        return;
+    }
+
+    const craterRadiusKm = impact.craterDiameter / 2 / 1000;
+    const blastRadiusKm = impact.blastRadius / 1000;
+    const shockwaveRadiusKm = impact.shockwaveRadius / 1000;
+
+    // Create visualization layers
+    const impactLayers = [
+        {
+            lat,
+            lng: lon,
+            radius: shockwaveRadiusKm,
+            color: '#FFC107',
+            alt: 0.01 // Slight elevation to prevent z-fighting
+        },
+        {
+            lat,
+            lng: lon,
+            radius: blastRadiusKm,
+            color: '#FF9800',
+            alt: 0.02
+        },
+        {
+            lat,
+            lng: lon,
+            radius: craterRadiusKm,
+            color: '#FF1744',
+            alt: 0.03
+        },
+        {
+            lat,
+            lng: lon,
+            radius: 50, // Impact point marker size in km
+            color: '#FFFFFF',
+            alt: 0.04
+        }
+    ].filter(layer => isFinite(layer.radius) && layer.radius > 0);
+
+    // Update globe layers
+    globe.customLayerData(impactLayers);
+
+    updateImpactInfo(impact);
+    showImpactDisplay();
+}
+
+function updateImpactInfo(impact) {
+    document.getElementById('energy-value').textContent = 
+        impact.energy >= 1e18 ? (impact.energy / 1e18).toFixed(2) + ' EJ' : 
+        impact.energy >= 1e15 ? (impact.energy / 1e15).toFixed(2) + ' PJ' : 
+        (impact.energy / 1e12).toFixed(2) + ' TJ';
+    
+    document.getElementById('crater-value').textContent = 
+        impact.craterDiameter >= 1000 ? (impact.craterDiameter / 1000).toFixed(1) + ' km' : 
+        impact.craterDiameter.toFixed(0) + ' m';
+    
+    document.getElementById('blast-value').textContent = 
+        impact.blastRadius >= 1000 ? (impact.blastRadius / 1000).toFixed(1) + ' km' : 
+        impact.blastRadius.toFixed(0) + ' m';
+    
+    document.getElementById('shockwave-value').textContent = 
+        (impact.shockwaveRadius / 1000).toFixed(1) + ' km';
+    
+    document.getElementById('tnt-value').textContent = 
+        impact.tntEquivalent >= 1e9 ? (impact.tntEquivalent / 1e9).toFixed(2) + ' Gigatons' : 
+        impact.tntEquivalent >= 1e6 ? (impact.tntEquivalent / 1e6).toFixed(2) + ' Megatons' : 
+        (impact.tntEquivalent / 1e3).toFixed(2) + ' Kilotons';
+}
+
+function showImpactDisplay() {
+    document.getElementById('impact-info').style.display = 'block';
+    document.getElementById('legend').style.display = 'block';
+}
+
+// Preset configurations
+const presets = {
+    chicxulub: { diameter: 10000, material: 3000, speed: 20, angle: 60 },
+    tunguska: { diameter: 60, material: 2000, speed: 15, angle: 30 },
+    chelyabinsk: { diameter: 20, material: 3000, speed: 19, angle: 20 },
+    barringer: { diameter: 50, material: 7800, speed: 12, angle: 45 },
+    apophis: { diameter: 370, material: 3000, speed: 12, angle: 45 }
+};
+
+function loadPreset(name) {
+    const preset = presets[name];
+    document.getElementById('diameter').value = preset.diameter;
+    document.getElementById('material').value = preset.material;
+    document.getElementById('speed').value = preset.speed;
+    document.getElementById('angle').value = preset.angle;
+    updateDisplayValues();
+}
+
+function resetMap() {
+    if (impactLayer) impactLayer.selectAll('*').remove();
+    document.getElementById('impact-info').style.display = 'none';
+    document.getElementById('legend').style.display = 'none';
+    
+    rotation = { x: 0, y: 0 };
+    currentZoom = 1;
+    projection.rotate([0, 0]).scale(Math.min(width, height) / 2.5);
+    if (land) land.attr('d', path);
+    oceanCircle.attr('r', projection.scale());
+    
+    svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+}
+
+function updateDisplayValues() {
+    document.getElementById('diameter-value').textContent = 
+        document.getElementById('diameter').value >= 1000 ? 
+        (document.getElementById('diameter').value / 1000).toFixed(1) + ' km' : 
+        document.getElementById('diameter').value + ' m';
+    document.getElementById('speed-value').textContent = 
+        document.getElementById('speed').value + ' km/s';
+    document.getElementById('angle-value').textContent = 
+        document.getElementById('angle').value + '°';
+}

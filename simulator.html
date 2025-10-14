@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteor Impact Simulator</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/metropolis-2" rel="stylesheet">
+    <!-- Complementary display font for a sci-fi/tech accent -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Load UMD builds for Three.js and Globe.GL to support browsers without importmap/module resolution -->
+    <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl@2.30.0/dist/globe.gl.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="usgs-data.js"></script>
+    <script src="impact-physics.js" type="module"></script>
+</head>
+<body>
+    <!-- Top navigation replaces the left 'LEARN' sidebar per user request -->
+    <header class="top-nav">
+        <div class="nav-left">
+            <a href="index.html" class="home-btn" title="Return to Meteor Matrix">🏠</a>
+            <span class="site-title">Impactor-2025 Simulator</span>
+        </div>
+        <nav class="nav-right" role="navigation" aria-label="Main navigation">
+            <button class="nav-btn" data-page="simulator" onclick="showPage('simulator')">Simulation</button>
+            <button class="nav-btn" data-page="risks" onclick="showPage('risks')">Asteroid Risks</button>
+            <button class="nav-btn" data-page="mitigation-page" onclick="showPage('mitigation-page')">Mitigation Strategies</button>
+            <button class="nav-btn" data-page="glossary-page" onclick="showPage('glossary-page')">Glossary</button>
+            <button class="nav-btn" data-page="citations" onclick="showPage('citations')">Citations</button>
+        </nav>
+    </header>
+
+    <div class="container">
+        
+        <div class="simulator-view">
+            <div class="sidebar">
+                <h1>Simulator</h1>
+                
+                <div class="section">
+                    <h2> </h2>
+                    <h2>Live NEO Data</h2>
+                    <div id="neo-list" class="neo-list">
+                        <p>Loading near-Earth objects...</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>Mitigation Strategies</h2>
+                    <div class="control-group">
+                        <label>Strategy:</label>
+                        <div class="custom-select" data-for="mitigation-strategy">
+                            <select id="mitigation-strategy" aria-hidden="true">
+                                <option value="none">No Mitigation</option>
+                                <option value="kinetic">Kinetic Impact</option>
+                                <option value="gravity">Gravity Tractor</option>
+                                <option value="nuclear">Nuclear Standoff</option>
+                            </select>
+                            <div class="custom-select-display" tabindex="0"></div>
+                            <div class="custom-select-list" role="listbox" aria-hidden="true"></div>
+                        </div>
+                    </div>
+
+                    <div id="kinetic-params" class="mitigation-params">
+                        <div class="control-group">
+                            <label>Impactor Mass: <span id="impactor-mass-value">1000</span> kg</label>
+                            <input type="range" id="impactor-mass" min="100" max="10000" value="1000">
+                        </div>
+                        <div class="control-group">
+                            <label>Impact Velocity: <span id="impactor-velocity-value">10</span> km/s</label>
+                            <input type="range" id="impactor-velocity" min="5" max="30" value="10">
+                        </div>
+                    </div>
+
+                    <div id="gravity-params" class="mitigation-params" style="display: none;">
+                        <div class="control-group">
+                            <label>Spacecraft Mass: <span id="spacecraft-mass-value">1000</span> kg</label>
+                            <input type="range" id="spacecraft-mass" min="500" max="5000" value="1000">
+                        </div>
+                        <div class="control-group">
+                            <label>Hover Distance: <span id="hover-distance-value">100</span> m</label>
+                            <input type="range" id="hover-distance" min="50" max="500" value="100">
+                        </div>
+                        <div class="control-group">
+                            <label>Duration: <span id="duration-value">180</span> days</label>
+                            <input type="range" id="duration" min="30" max="365" value="180">
+                        </div>
+                    </div>
+
+                    <div id="nuclear-params" class="mitigation-params" style="display: none;">
+                        <div class="control-group">
+                            <label>Yield: <span id="yield-value">1</span> Mt</label>
+                            <input type="range" id="yield" min="0.1" max="50" value="1" step="0.1">
+                        </div>
+                        <div class="control-group">
+                            <label>Standoff Distance: <span id="standoff-value">100</span> m</label>
+                            <input type="range" id="standoff" min="50" max="500" value="100">
+                        </div>
+                    </div>
+
+                    <button class="action-btn" onclick="calculateMitigation()">Calculate Deflection</button>
+                    <div id="mitigation-results"></div>
+                </div>
+
+                <!-- Historic Events section removed per request -->
+                
+                <div class="section">
+                    <h2>Meteor Parameters</h2>
+                    
+                    <div class="control-group">
+                        <label>
+                            Diameter: <span class="value-display" id="diameter-value">25 m</span>
+                            <div class="help-icon" data-tooltip="The size of the asteroid. Larger objects cause more damage. For comparison: Chelyabinsk meteor ~20m, Tunguska ~60m, Chicxulub ~10km">?</div>
+                        </label>
+                        <input type="range" id="diameter" min="1" max="500" value="25" step="1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>
+                            Material / Density
+                            <div class="help-icon" data-tooltip="The composition affects impact energy. Ice asteroids are less dense but more common, while iron asteroids are rare but more destructive.">?</div>
+                        </label>
+                        <div class="custom-select" data-for="material">
+                            <select id="material" aria-hidden="true">
+                                <option value="2000">Ice (920 kg/m³)</option>
+                                <option value="3000" selected>Stony (3000 kg/m³)</option>
+                                <option value="7800">Iron (7800 kg/m³)</option>
+                            </select>
+                            <div class="custom-select-display" tabindex="0"></div>
+                            <div class="custom-select-list" role="listbox" aria-hidden="true"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Impact Speed: <span class="value-display" id="speed-value">17 km/s</span></label>
+                        <input type="range" id="speed" min="11" max="72" value="17" step="1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Impact Angle: <span class="value-display" id="angle-value">35°</span></label>
+                        <input type="range" id="angle" min="15" max="90" value="35" step="5">
+                    </div>
+                    <div class="control-group">
+                        <button id="start-simulation-btn" class="preset-btn" style="width:100%; margin-top:10px;" onclick="startSimulation()">Simulation Start</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="main-view">
+                <div class="impact-info" id="impact-info">
+                    <h3>Impact Results</h3>
+                    <div class="impact-stat">
+                        <span class="impact-stat-label">Impact Energy: </span>
+                        <span class="impact-stat-value" id="energy-value">-</span>
+                    </div>
+                    <div class="impact-stat">
+                        <span class="impact-stat-label">Crater Diameter: </span>
+                        <span class="impact-stat-value" id="crater-value">-</span>
+                    </div>
+                    <div class="impact-stat">
+                        <span class="impact-stat-label">Shockwave Radius: </span>
+                        <span class="impact-stat-value" id="shockwave-value">-</span>
+                    </div>
+                    <div class="impact-stat">
+                        <span class="impact-stat-label">Blast Radius: </span>
+                        <span class="impact-stat-value" id="blast-value">-</span>
+                    </div>
+                    <div class="impact-stat">
+                        <span class="impact-stat-label">Equivalent TNT: </span>
+                        <span class="impact-stat-value" id="tnt-value">-</span>
+                    </div>
+                </div>
+                
+                <div class="legend" id="legend">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(255, 23, 68, 0.8);"></div>
+                        <span>Crater</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(255, 152, 0, 0.6);"></div>
+                        <span>Blast Radius</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: rgba(255, 235, 59, 0.5);"></div>
+                        <span>Shockwave</span>
+                    </div>
+                </div>
+                
+                <div class="instruction">Click anywhere on Earth to simulate impact | Drag to rotate | Scroll to zoom</div>
+            </div>
+        </div>
+        
+    <!-- Glossary moved to the end of the content stack -->
+
+            <!-- These definitions are tailored to the terms used in the simulator UI and data panels. -->
+
+    </div>
+
+    <div class="content-page" id="risks-page">
+            <h1 class="page-title">Asteroid Risks</h1>
+            
+            <div class="risk-section">
+                <h2>Understanding the Threat</h2>
+                <p>Asteroid impacts pose one of the few natural disasters that could potentially end human civilization. While large, extinction-level impacts are extremely rare (occurring once every 50-100 million years), smaller but still devastating impacts occur more frequently.</p>
+                
+                <h3>Impact Frequency by Size</h3>
+                <ul>
+                    <li><strong>1-10 meters:</strong> Occur multiple times per year, usually burning up in atmosphere</li>
+                    <li><strong>10-50 meters:</strong> Once every few decades (Chelyabinsk-sized)</li>
+                    <li><strong>50-100 meters:</strong> Once every few centuries (Tunguska-sized)</li>
+                    <li><strong>1 km+:</strong> Once every 500,000 years (regional devastation)</li>
+                    <li><strong>10 km+:</strong> Once every 50-100 million years (mass extinction)</li>
+                </ul>
+            </div>
+            
+            <div class="risk-section">
+                <h2>Potential Impact Consequences</h2>
+                
+                <h3>Local Effects</h3>
+                <p>Impacts create immediate devastation in the impact zone through cratering, thermal radiation, and blast waves. A 100-meter asteroid could destroy an entire city, while a 1-kilometer object would cause continental-scale destruction.</p>
+                
+                <h3>Global Effects</h3>
+                <p>Large impacts (>1 km) can trigger global catastrophes including:</p>
+                <ul>
+                    <li>Massive tsunamis if impacting oceans</li>
+                    <li>Global firestorms from ejected heated debris</li>
+                    <li>Years-long "impact winter" from atmospheric dust blocking sunlight</li>
+                    <li>Acid rain from vaporized rock and seawater</li>
+                    <li>Widespread crop failure and ecosystem collapse</li>
+                </ul>
+            </div>
+            
+            
+        </div>
+
+        <div class="content-page" id="mitigation-page">
+            <h1 class="page-title">Mitigation Strategies</h1>
+            
+            <div class="risk-section">
+                <h2>Detection and Tracking</h2>
+                <p>Space agencies worldwide operate programs to detect and track Near-Earth Objects (NEOs):</p>
+                
+                <h3>Current Detection Systems</h3>
+                <ul>
+                    <li><strong>Pan-STARRS:</strong> Wide-field telescopes in Hawaii scanning for NEOs</li>
+                    <li><strong>Catalina Sky Survey:</strong> Arizona-based asteroid detection program</li>
+                    <li><strong>NEOWISE:</strong> NASA infrared space telescope for asteroid discovery</li>
+                    <li><strong>NEO Surveyor:</strong> Future dedicated infrared space telescope (planned launch 2027)</li>
+                </ul>
+                
+                <p>Scientists have catalogued over 95% of NEOs larger than 1 kilometer, and none currently pose a threat to Earth in the next century. The focus now is on finding smaller but still dangerous objects (140m+).</p>
+            </div>
+
+            <div class="risk-section">
+                <h2>Mitigation Methods</h2>
+                <p>If we detect a threatening asteroid with sufficient warning time (years to decades), several deflection techniques could be employed. The simulator provides parameter controls to explore some of these methods in a simplified physics model.</p>
+                <ul>
+                    <li><strong>Kinetic Impactor:</strong> Ramming the asteroid with a spacecraft to alter its orbit. NASA's DART mission successfully demonstrated this in 2022 by deflecting the asteroid Dimorphos.</li>
+                    <li><strong>Gravity Tractor:</strong> A spacecraft hovers near the asteroid for extended periods, using its gravitational pull to gradually tug the object off course.</li>
+                    <li><strong>Nuclear Deflection:</strong> Detonating a nuclear device near (not on) an asteroid to vaporize surface material, creating thrust that pushes it away. This is considered a last resort for large threats with short warning times.</li>
+                    <li><strong>Ion Beam Shepherd:</strong> A spacecraft uses ion beams to ablate asteroid material, generating thrust to slowly alter the trajectory.</li>
+                    <li><strong>Solar Sail:</strong> Attaching reflective material to enhance solar radiation pressure, gradually pushing the asteroid over time.</li>
+                </ul>
+            </div>
+
+            <div class="risk-section">
+                <h2>Recent Success: DART Mission</h2>
+                <p>In September 2022, NASA's Double Asteroid Redirection Test (DART) successfully crashed into the asteroid moon Dimorphos, changing its orbital period by 33 minutes—far exceeding the mission's success threshold of 73 seconds. This historic achievement proved that kinetic impactor technology works and humanity has the capability to defend Earth from asteroid threats.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="content-page" id="glossary-page">
+            <h1 class="page-title">Glossary</h1>
+
+            <!-- These definitions are tailored to the terms used in the simulator UI and data panels. -->
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Near-Earth Object (NEO)</div>
+                <div class="dictionary-definition">An asteroid or comet whose orbit brings it close to Earth's orbit. This app displays NEO properties (magnitude, diameter, close approach, risk metrics) sourced from NASA data.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Absolute Magnitude (H)</div>
+                <div class="dictionary-definition">A measure of an asteroid's brightness at a standard distance. Lower H means a larger object; used here to estimate diameter ranges.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Estimated Diameter</div>
+                <div class="dictionary-definition">The estimated size range of the object in meters based on its absolute magnitude and assumed albedo. Displayed as min–max meters in the NEO panel.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Impact Velocity</div>
+                <div class="dictionary-definition">The speed at which the object would strike the atmosphere or surface (km/s). Higher speeds increase kinetic energy and damage.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Kinetic Energy</div>
+                <div class="dictionary-definition">Energy of motion (½mv²). The simulator converts this to TNT equivalent to show destructive potential. Units: joules / TNT equivalent.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Crater Diameter</div>
+                <div class="dictionary-definition">Estimated final crater size on land, adjusted for impact energy and target terrain. Shown in meters or kilometers in the results panel.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Blast Radius</div>
+                <div class="dictionary-definition">Radius around the impact where the blast and thermal effects cause severe damage. Computed from impact energy and displayed on the globe and results panel.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Shockwave</div>
+                <div class="dictionary-definition">The high-pressure wave that propagates outward from an impact or airburst, causing structural damage and injuries beyond the crater zone.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Airburst</div>
+                <div class="dictionary-definition">An explosion that occurs when an object fragments in the atmosphere, releasing energy as a shockwave without forming a surface crater (e.g., Tunguska, Chelyabinsk).</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Tsunami Risk</div>
+                <div class="dictionary-definition">If an impact occurs in water or near low-lying coasts, it can generate waves. The simulator flags coastal impacts and estimates initial wave height (simplified model).</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Palermo Scale</div>
+                <div class="dictionary-definition">Logarithmic scale used to compare the impact hazard of a discovered NEO with the background hazard. Negative values mean less risk than background.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Torino Scale</div>
+                <div class="dictionary-definition">A color-coded integer scale (0–10) that communicates the level of public concern for a potential impact, combining probability and potential damage.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">Mitigation Strategies</div>
+                <div class="dictionary-definition">Techniques to alter or prevent an impact (e.g., kinetic impactor, gravity tractor, nuclear standoff). The simulator models simplified effectiveness estimates for these strategies.</div>
+            </div>
+
+            <div class="dictionary-entry">
+                <div class="dictionary-term">TNT Equivalent</div>
+                <div class="dictionary-definition">A way to express impact energy by comparing it to tons of TNT. Used to give an intuitive sense of explosive power from impact energy.</div>
+            </div>
+
+            <!-- For maintainers: definitions reference NASA NEO data, USGS elevation/seismic feeds, and the app's internal impact physics module (`impact-physics.js`). -->
+    </div>
+
+    <!-- Citations Section -->
+    <div class="content-page citations-page" id="citations">
+        <div class="page-content">
+            <h1>Citations & Resources</h1>
+            <p class="citations-intro">This simulator was built using various open-source libraries, APIs, and scientific data sources. We acknowledge and thank the following:</p>
+            
+            <div class="citations-section">
+                <h2>JavaScript Libraries & Frameworks</h2>
+                <div class="citation-item">
+                    <strong>Three.js</strong><br>
+                    <em>JavaScript 3D library for WebGL graphics and animations</em><br>
+                    <a href="https://threejs.org/" target="_blank">https://threejs.org/</a><br>
+                    Used for: 3D meteor animations, particle systems, trail effects, and visual simulations
+                </div>
+                
+                <div class="citation-item">
+                    <strong>Globe.GL</strong><br>
+                    <em>3D globe data visualization library built on Three.js</em><br>
+                    <a href="https://globe.gl/" target="_blank">https://globe.gl/</a><br>
+                    Used for: Interactive Earth globe, coordinate mapping, and geographic visualization
+                </div>
+            </div>
+
+            <div class="citations-section">
+                <h2>APIs & Data Sources</h2>
+                <div class="citation-item">
+                    <strong>NASA Near Earth Object (NEO) API</strong><br>
+                    <em>Real-time data on near-Earth asteroids and comets</em><br>
+                    <a href="https://api.nasa.gov/" target="_blank">https://api.nasa.gov/</a><br>
+                    Used for: Live asteroid data, orbital parameters, and hazard classifications
+                </div>
+                
+                <div class="citation-item">
+                    <strong>USGS Elevation & Seismic Data</strong><br>
+                    <em>United States Geological Survey geographic and seismic datasets</em><br>
+                    <a href="https://www.usgs.gov/" target="_blank">https://www.usgs.gov/</a><br>
+                    Used for: Terrain elevation data and seismic impact modeling
+                </div>
+            </div>
+
+            <div class="citations-section">
+                <h2>Scientific References</h2>
+                <div class="citation-item">
+                    <strong>NASA Planetary Defense Coordination Office</strong><br>
+                    <em>Scientific basis for asteroid impact physics and mitigation strategies</em><br>
+                    <a href="https://www.nasa.gov/planetarydefense/" target="_blank">https://www.nasa.gov/planetarydefense/</a>
+                </div>
+                
+                <div class="citation-item">
+                    <strong>ESA Space Situational Awareness</strong><br>
+                    <em>European Space Agency asteroid detection and tracking programs</em><br>
+                    <a href="https://www.esa.int/Safety_Security/Space_Situational_Awareness" target="_blank">https://www.esa.int/Safety_Security/Space_Situational_Awareness</a>
+                </div>
+            </div>
+
+            <div class="disclaimer">
+                <p><strong>Created for NASA Space Apps Challenge 2025</strong><br>
+                Team: Meteor Matrix | Challenge: Meteor Madness</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>

@@ -2,4 +2,4 @@
 
 # 2) [Simulator](https://kp4ever.github.io/NASASpaceAppsChallenge/)
 
-# 3) More details about the project: [Click here](https://www.spaceappschallenge.org/2025/find-a-team/meteor-matrix/?tab=project)
+# 3) NASA Project Details: [Click here](https://www.spaceappschallenge.org/2025/find-a-team/meteor-matrix/?tab=project)
